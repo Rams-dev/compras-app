@@ -1,0 +1,22 @@
+2026-09-10 12:25:45,217 - config - INFO - Selected Embedding Provider: None
+2026-09-10 12:25:45,217 - config - INFO - No EMBEDDING_PROVIDER selected or it is set to None. Disabling embedding features.
+2026-09-10 12:25:45,217 - config - INFO - Read-only mode: True
+2026-09-10 12:25:45,219 - config - INFO - Logging to console and to file: logs/mcp_server.log (Level: INFO, MaxSize: 10485760B, Backups: 5)
+2026-09-10 12:25:47,848 - config - WARNING - Google Generative AI SDK ('google-genai' package) not installed. Gemini provider will not be available. Error: No module named 'google.api_core'
+2026-09-10 12:25:47,848 - config - INFO - Current sys.path: ['C:\\Users\\Desarrollo\\Documents\\mcp\\mcp\\src', 'C:\\Users\\Desarrollo\\AppData\\Roaming\\uv\\python\\cpython-3.11.13-windows-x86_64-none\\python311.zip', 'C:\\Users\\Desarrollo\\AppData\\Roaming\\uv\\python\\cpython-3.11.13-windows-x86_64-none\\DLLs', 'C:\\Users\\Desarrollo\\AppData\\Roaming\\uv\\python\\cpython-3.11.13-windows-x86_64-none\\Lib', 'C:\\Users\\Desarrollo\\AppData\\Roaming\\uv\\python\\cpython-3.11.13-windows-x86_64-none', 'C:\\Users\\Desarrollo\\Documents\\mcp\\mcp\\.venv', 'C:\\Users\\Desarrollo\\Documents\\mcp\\mcp\\.venv\\Lib\\site-packages', 'C:\\Users\\Desarrollo\\Documents\\mcp\\mcp\\.venv\\Lib\\site-packages\\win32', 'C:\\Users\\Desarrollo\\Documents\\mcp\\mcp\\.venv\\Lib\\site-packages\\win32\\lib', 'C:\\Users\\Desarrollo\\Documents\\mcp\\mcp\\.venv\\Lib\\site-packages\\pythonwin']
+2026-09-10 12:25:47,852 - config - INFO - Initializing MariaDB_Server...
+2026-09-10 12:25:47,852 - config - WARNING - Server running in READ-ONLY mode. Write operations are disabled.
+2026-09-10 12:25:47,857 - config - INFO - SSL disabled for database connection
+2026-09-10 12:25:47,857 - config - INFO - Creating connection pool for root@localhost:3308/grupo_bonn_servidor (max size: 10)
+2026-09-10 12:25:47,866 - config - INFO - Connection pool initialized successfully.
+2026-09-10 12:25:47,875 - config - INFO - Registered MCP tools explicitly.
+2026-09-10 12:25:47,875 - config - INFO - Starting MCP server via stdio...
+2026-09-10 12:25:47,890 - mcp.server.lowlevel.server - INFO - Processing request of type ListToolsRequest
+2026-09-10 12:25:47,912 - mcp.server.lowlevel.server - INFO - Processing request of type ListPromptsRequest
+2026-09-10 12:25:47,913 - mcp.server.lowlevel.server - INFO - Processing request of type ListResourcesRequest
+2026-09-10 12:25:52,336 - mcp.server.lowlevel.server - INFO - Processing request of type ListToolsRequest
+2026-09-10 12:25:55,078 - mcp.server.lowlevel.server - INFO - Processing request of type ListToolsRequest
+2026-09-10 12:25:58,880 - mcp.server.lowlevel.server - INFO - Processing request of type ListToolsRequest
+2026-09-10 12:26:03,421 - mcp.server.lowlevel.server - INFO - Processing request of type ListToolsRequest
+2026-09-10 12:26:06,478 - mcp.server.lowlevel.server - INFO - Processing request of type ListToolsRequest
+2026-09-10 12:54:57,735 - mcp.server.lowlevel.server - INFO - Processing request of type ListToolsRequest

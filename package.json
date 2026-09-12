@@ -34,7 +34,9 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "build:apk": "powershell -ExecutionPolicy Bypass -File ./scripts/build-apk.ps1"
+    "build:apk": "powershell -ExecutionPolicy Bypass -File ./scripts/build-apk.ps1",
+    "setup:adb": "powershell -ExecutionPolicy Bypass -File ./scripts/setup-adb.ps1",
+    "build:web": "expo export -p web"
   },
   "private": true
 }

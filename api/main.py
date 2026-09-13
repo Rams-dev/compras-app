@@ -1,15 +1,34 @@
 """API Compras App — FastAPI + SQLite (mismo modelo que la app móvil)."""
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-DB_PATH = Path(__file__).with_name("compras.db")
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
+
+DB_PATH = Path(os.getenv("DB_PATH", str(Path(__file__).with_name("compras.db"))))
+CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if o.strip()]
+API_TOKEN = os.getenv("API_TOKEN", "").strip()
+
+
+def require_token(authorization: str | None = Header(None)) -> None:
+    if not API_TOKEN:
+        return
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Missing token")
+    if authorization.removeprefix("Bearer ").strip() != API_TOKEN:
+        raise HTTPException(403, "Invalid token")
 
 
 def now_iso() -> str:
@@ -71,7 +90,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Compras App API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -84,7 +103,7 @@ def health() -> dict:
 
 # ---- Productos ----
 
-@app.get("/productos")
+@app.get("/productos", dependencies=[Depends(require_token)])
 def listar_productos(
     nombre: str = "",
     incluir_inactivos: bool = False,
@@ -105,7 +124,7 @@ def listar_productos(
         return [dict(r) for r in conn.execute(sql, (*params, limit, offset))]
 
 
-@app.post("/productos", status_code=201)
+@app.post("/productos", status_code=201, dependencies=[Depends(require_token)])
 def crear_producto(p: ProductoIn) -> dict:
     now = now_iso()
     with get_db() as conn:
@@ -117,7 +136,7 @@ def crear_producto(p: ProductoIn) -> dict:
         return {"id": cur.lastrowid}
 
 
-@app.put("/productos/{pid}")
+@app.put("/productos/{pid}", dependencies=[Depends(require_token)])
 def actualizar_producto(pid: int, p: ProductoIn) -> dict:
     with get_db() as conn:
         cur = conn.execute(
@@ -129,14 +148,14 @@ def actualizar_producto(pid: int, p: ProductoIn) -> dict:
         return {"ok": True}
 
 
-@app.delete("/productos/{pid}")
+@app.delete("/productos/{pid}", dependencies=[Depends(require_token)])
 def eliminar_producto(pid: int) -> dict:
     with get_db() as conn:
         conn.execute("UPDATE productos SET estatus = 'inactivo', fecha_actualizacion = ? WHERE id = ?", (now_iso(), pid))
         return {"ok": True}
 
 
-@app.post("/productos/{pid}/reactivar")
+@app.post("/productos/{pid}/reactivar", dependencies=[Depends(require_token)])
 def reactivar_producto(pid: int) -> dict:
     with get_db() as conn:
         conn.execute("UPDATE productos SET estatus = 'activo', fecha_actualizacion = ? WHERE id = ?", (now_iso(), pid))
@@ -145,7 +164,7 @@ def reactivar_producto(pid: int) -> dict:
 
 # ---- Compras ----
 
-@app.get("/compras")
+@app.get("/compras", dependencies=[Depends(require_token)])
 def listar_compras(
     idProducto: int | None = None,
     desde: str | None = None,
@@ -178,7 +197,7 @@ def listar_compras(
         return [dict(r) for r in conn.execute(sql, (*params, limit, offset))]
 
 
-@app.post("/compras", status_code=201)
+@app.post("/compras", status_code=201, dependencies=[Depends(require_token)])
 def crear_compra(c: CompraIn) -> dict:
     with get_db() as conn:
         cur = conn.execute(
@@ -189,7 +208,7 @@ def crear_compra(c: CompraIn) -> dict:
         return {"id": cur.lastrowid}
 
 
-@app.put("/compras/{cid}")
+@app.put("/compras/{cid}", dependencies=[Depends(require_token)])
 def actualizar_compra(cid: int, c: CompraIn) -> dict:
     with get_db() as conn:
         cur = conn.execute(
@@ -201,14 +220,14 @@ def actualizar_compra(cid: int, c: CompraIn) -> dict:
         return {"ok": True}
 
 
-@app.delete("/compras/{cid}")
+@app.delete("/compras/{cid}", dependencies=[Depends(require_token)])
 def eliminar_compra(cid: int) -> dict:
     with get_db() as conn:
         conn.execute("UPDATE compras SET estatus = 'inactivo' WHERE id = ?", (cid,))
         return {"ok": True}
 
 
-@app.post("/compras/{cid}/reactivar")
+@app.post("/compras/{cid}/reactivar", dependencies=[Depends(require_token)])
 def reactivar_compra(cid: int) -> dict:
     with get_db() as conn:
         conn.execute("UPDATE compras SET estatus = 'activo' WHERE id = ?", (cid,))

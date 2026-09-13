@@ -43,3 +43,5 @@ yarn-error.*
 # local databases (API dev data)
 /api/*.db
 __pycache__/
+api/.env
+*.service

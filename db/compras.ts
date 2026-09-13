@@ -1,7 +1,9 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
+import { Platform } from 'react-native';
 import { nowISO } from './schema';
 import { isMemoryDB, memCreateCompra, memListCompras, memSetEstatusCompra, memUpdateCompra } from './memory';
 import type { Compra } from './types';
+import { api } from '@/utils/api';
 
 export interface FiltroCompras {
   idProducto?: number | null;
@@ -16,6 +18,15 @@ export interface Paginacion {
 }
 
 export async function listCompras(db: SQLiteDatabase, f: FiltroCompras = {}, pag?: Paginacion): Promise<Compra[]> {
+  if (Platform.OS === 'web') {
+    const qs = new URLSearchParams();
+    if (f.idProducto) qs.set('idProducto', String(f.idProducto));
+    if (f.desde) qs.set('desde', f.desde);
+    if (f.hasta) qs.set('hasta', f.hasta);
+    qs.set('incluir_inactivos', String(!!f.incluirInactivos));
+    if (pag) { qs.set('limit', String(pag.limit)); qs.set('offset', String(pag.offset)); }
+    return api.get<Compra[]>(`/compras?${qs.toString()}`);
+  }
   if (isMemoryDB(db)) return memListCompras(f, pag);
   const where: string[] = [];
   const params: any[] = [];
@@ -42,6 +53,10 @@ export async function listCompras(db: SQLiteDatabase, f: FiltroCompras = {}, pag
 }
 
 export async function createCompra(db: SQLiteDatabase, idProducto: number, fecha_compra: string, costo: number, recordar = 1) {
+  if (Platform.OS === 'web') {
+    const r = await api.post<{ id: number }>('/compras', { idProducto, recordar, fecha_compra, costo });
+    return r.id;
+  }
   if (isMemoryDB(db)) return memCreateCompra(idProducto, fecha_compra, costo, recordar);
   const r = await db.runAsync(
     `INSERT INTO compras (idProducto, recordar, fecha_compra, costo, fecha_creacion, estatus) VALUES (?, ?, ?, ?, ?, 'activo')`,
@@ -51,6 +66,7 @@ export async function createCompra(db: SQLiteDatabase, idProducto: number, fecha
 }
 
 export async function updateCompra(db: SQLiteDatabase, id: number, idProducto: number, fecha_compra: string, costo: number, recordar = 1) {
+  if (Platform.OS === 'web') return api.put(`/compras/${id}`, { idProducto, recordar, fecha_compra, costo });
   if (isMemoryDB(db)) return memUpdateCompra(id, idProducto, fecha_compra, costo, recordar);
   await db.runAsync(`UPDATE compras SET idProducto = ?, recordar = ?, fecha_compra = ?, costo = ? WHERE id = ?`, [
     idProducto,
@@ -62,11 +78,13 @@ export async function updateCompra(db: SQLiteDatabase, id: number, idProducto: n
 }
 
 export async function softDeleteCompra(db: SQLiteDatabase, id: number) {
+  if (Platform.OS === 'web') return api.del(`/compras/${id}`);
   if (isMemoryDB(db)) return memSetEstatusCompra(id, 'inactivo');
   await db.runAsync(`UPDATE compras SET estatus = 'inactivo' WHERE id = ?`, [id]);
 }
 
 export async function reactivarCompra(db: SQLiteDatabase, id: number) {
+  if (Platform.OS === 'web') return api.post(`/compras/${id}/reactivar`);
   if (isMemoryDB(db)) return memSetEstatusCompra(id, 'activo');
   await db.runAsync(`UPDATE compras SET estatus = 'activo' WHERE id = ?`, [id]);
 }

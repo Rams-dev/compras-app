@@ -1,5 +1,5 @@
-import { memoryMarker } from './memory';
+import { apiMarker } from './memory';
 
 export function useDB(): any {
-  return memoryMarker;
+  return apiMarker;
 }

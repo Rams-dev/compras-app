@@ -3,6 +3,7 @@ import type { Compra, Producto } from './types';
 const nowISO = () => new Date().toISOString();
 
 export const memoryMarker = { __memory: true } as const;
+export const apiMarker = { __api: true } as const;
 export const isMemoryDB = (db: any) => !!db?.__memory;
 
 export interface Paginacion {

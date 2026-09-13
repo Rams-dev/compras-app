@@ -52,6 +52,7 @@
       "typedRoutes": true
     },
     "extra": {
+      "apiUrl": "http://localhost:9000",
       "router": {
         "headers": {
           "Cross-Origin-Embedder-Policy": "credentialless",

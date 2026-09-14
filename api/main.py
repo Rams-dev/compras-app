@@ -6,7 +6,7 @@ import sqlite3
 
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -22,7 +22,9 @@ CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "*").split(",") if 
 API_TOKEN = os.getenv("API_TOKEN", "").strip()
 
 
-def require_token(authorization: str | None = Header(None)) -> None:
+def require_token(request: Request, authorization: str | None = Header(None)) -> None:
+    if request.method == "OPTIONS":
+        return
     if not API_TOKEN:
         return
     if not authorization or not authorization.startswith("Bearer "):

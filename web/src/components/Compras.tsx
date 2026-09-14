@@ -9,6 +9,7 @@ export function Compras() {
   const [modal, setModal] = useState(false)
   const [selProd, setSelProd] = useState('')
   const [costo, setCosto] = useState('')
+  const [fecha, setFecha] = useState(new Date().toISOString().slice(0, 10))
   const [edit, setEdit] = useState<Compra | null>(null)
 
   const cargar = async () => {
@@ -17,12 +18,12 @@ export function Compras() {
   }
   useEffect(() => { cargar() }, [fProd])
 
-  const openNew = () => { setEdit(null); setSelProd(productos[0] ? String(productos[0].id) : ''); setCosto(''); setModal(true) }
-  const openEdit = (c: Compra) => { setEdit(c); setSelProd(String(c.idProducto)); setCosto(String(c.costo)); setModal(true) }
+  const openNew = () => { setEdit(null); setSelProd(productos[0] ? String(productos[0].id) : ''); setCosto(''); setFecha(new Date().toISOString().slice(0, 10)); setModal(true) }
+  const openEdit = (c: Compra) => { setEdit(c); setSelProd(String(c.idProducto)); setCosto(String(c.costo)); setFecha(c.fecha_compra.slice(0, 10)); setModal(true) }
 
   const guardar = async () => {
     if (!selProd) return alert('Elige producto')
-    const body = { idProducto: Number(selProd), costo: parseFloat(costo), fecha_compra: new Date().toISOString().slice(0, 10), recordar: 1 }
+    const body = { idProducto: Number(selProd), costo: parseFloat(costo), fecha_compra: fecha, recordar: 1 }
     if (edit) await api.put(`/compras/${edit.id}`, body)
     else await api.post('/compras', body)
     setModal(false); cargar()
@@ -54,6 +55,7 @@ export function Compras() {
         <div className="space-y-4">
           <div><label className="text-sm font-medium">Producto</label><select value={selProd} onChange={e => setSelProd(e.target.value)} className="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white">{productos.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</select></div>
           <div><label className="text-sm font-medium">Costo</label><input value={costo} onChange={e => setCosto(e.target.value)} placeholder="0.00" inputMode="decimal" className="mt-1 w-full border rounded-xl px-3 py-2.5" /></div>
+          <div><label className="text-sm font-medium">Fecha de compra</label><input type="date" value={fecha} onChange={e => setFecha(e.target.value)} className="mt-1 w-full border rounded-xl px-3 py-2.5 bg-white" /></div>
           <div className="flex gap-2 pt-2"><button onClick={() => setModal(false)} className="flex-1 border rounded-xl py-2.5">Cancelar</button><button onClick={guardar} className="flex-1 bg-zinc-900 text-white rounded-xl py-2.5">Guardar</button></div>
         </div>
       </Modal>

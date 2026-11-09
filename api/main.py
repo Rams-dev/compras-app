@@ -1,30 +1,47 @@
 """API Compras App — FastAPI + SQLite (mismo modelo que la app móvil)."""
+from collections.abc import Iterator
+from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 import sqlite3
-
-from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-DB_PATH = Path(__file__).with_name("compras.db")
+DB_PATH = Path(os.environ.get("COMPRAS_DB_PATH", Path(__file__).with_name("compras.db")))
+# Orígenes permitidos separados por coma. Por defecto "*" (desarrollo).
+CORS_ORIGINS = [o.strip() for o in os.environ.get("COMPRAS_CORS_ORIGINS", "*").split(",") if o.strip()]
+
+DATABASE_VERSION = 4
 
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def get_db() -> sqlite3.Connection:
+@contextmanager
+def get_db() -> Iterator[sqlite3.Connection]:
+    """Abre una conexión, hace commit/rollback y SIEMPRE la cierra.
+
+    (`with sqlite3.connect(...)` solo maneja la transacción, no cierra la conexión.)
+    """
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def init_db() -> None:
     with get_db() as conn:
+        current = conn.execute("PRAGMA user_version").fetchone()[0]
+        if current >= DATABASE_VERSION:
+            return
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS productos (
@@ -36,6 +53,8 @@ def init_db() -> None:
                 fecha_actualizacion TEXT NOT NULL,
                 estatus TEXT NOT NULL DEFAULT 'activo'
             );
+            CREATE INDEX IF NOT EXISTS idx_productos_fecha ON productos(fecha_creacion DESC);
+            CREATE INDEX IF NOT EXISTS idx_productos_nombre ON productos(nombre);
             CREATE TABLE IF NOT EXISTS compras (
                 id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                 idProducto INTEGER NOT NULL REFERENCES productos(id),
@@ -45,8 +64,17 @@ def init_db() -> None:
                 fecha_creacion TEXT NOT NULL,
                 estatus TEXT NOT NULL DEFAULT 'activo'
             );
+            CREATE INDEX IF NOT EXISTS idx_compras_fecha ON compras(fecha_compra DESC);
+            CREATE INDEX IF NOT EXISTS idx_compras_producto ON compras(idProducto);
             """
         )
+        if current < 4:
+            # v4: fecha_compra pasa de timestamp UTC a fecha local YYYY-MM-DD.
+            conn.execute(
+                "UPDATE compras SET fecha_compra = date(fecha_compra, 'localtime') WHERE length(fecha_compra) > 10"
+            )
+            conn.execute("UPDATE compras SET costo = round(costo, 2)")
+        conn.execute(f"PRAGMA user_version = {DATABASE_VERSION}")
 
 
 class ProductoIn(BaseModel):
@@ -71,7 +99,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Compras App API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )

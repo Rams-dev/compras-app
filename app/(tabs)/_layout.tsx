@@ -12,7 +12,7 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="two"
+        name="compras"
         options={{
           title: 'Compras',
           tabBarIcon: ({ color, size }) => <MaterialIcons name="shopping-cart" color={color} size={size} />,

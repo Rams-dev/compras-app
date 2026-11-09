@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import type { Producto } from '@/db/types';
@@ -11,32 +11,62 @@ interface Props {
   placeholder?: string;
 }
 
+type Opcion = { id: number | null; nombre: string; inactivo?: boolean };
+
 export function ProductAutocomplete({ productos, value, onChange, incluirTodos = false, placeholder = 'Buscar producto...' }: Props) {
   const [query, setQuery] = useState('');
   const [abierto, setAbierto] = useState(false);
+  const cerrarTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const seleccionado = productos.find((p) => p.id === value) ?? null;
+  const nombreSel = seleccionado?.nombre ?? '';
+  const nombreSelRef = useRef(nombreSel);
+  nombreSelRef.current = nombreSel;
 
+  const cancelarCierre = () => {
+    if (cerrarTimer.current) clearTimeout(cerrarTimer.current);
+    cerrarTimer.current = null;
+  };
+
+  // Se sincroniza también cuando la lista de productos llega después del valor.
   useEffect(() => {
-    setQuery(seleccionado?.nombre ?? '');
-  }, [value]);
+    setQuery(nombreSel);
+  }, [value, nombreSel]);
 
-  const resultados = useMemo(() => {
+  useEffect(() => cancelarCierre, []);
+
+  const resultados = useMemo<Opcion[]>(() => {
     const q = query.trim().toLowerCase();
-    const base = q ? productos.filter((p) => p.nombre.toLowerCase().includes(q)) : productos;
-    return base.slice(0, 20);
-  }, [productos, query]);
+    // Con un producto ya elegido y sin editar el texto, se muestra la lista completa.
+    const filtrar = q && q !== nombreSel.toLowerCase();
+    const base = filtrar ? productos.filter((p) => p.nombre.toLowerCase().includes(q)) : productos;
+    const ops: Opcion[] = base.slice(0, 20).map((p) => ({ id: p.id, nombre: p.nombre, inactivo: p.estatus === 'inactivo' }));
+    return incluirTodos ? [{ id: null, nombre: 'Todos los productos' }, ...ops] : ops;
+  }, [productos, query, nombreSel, incluirTodos]);
 
-  const elegir = (id: number | null, nombre: string) => {
-    onChange(id);
-    setQuery(nombre);
+  const elegir = (op: Opcion) => {
+    cancelarCierre();
+    onChange(op.id);
+    setQuery(op.id === null ? '' : op.nombre);
     setAbierto(false);
   };
 
   const limpiar = () => {
+    cancelarCierre();
     setQuery('');
     setAbierto(false);
     onChange(null);
+  };
+
+  // Al salir del campo se cierra la lista y se restaura el texto del producto elegido.
+  // El retraso deja que el toque sobre una opción se procese antes (sobre todo en web).
+  const alSalir = () => {
+    cancelarCierre();
+    cerrarTimer.current = setTimeout(() => {
+      cerrarTimer.current = null;
+      setAbierto(false);
+      setQuery(nombreSelRef.current);
+    }, 200);
   };
 
   return (
@@ -44,16 +74,20 @@ export function ProductAutocomplete({ productos, value, onChange, incluirTodos =
       <View style={s.inputRow}>
         <TextInput
           style={s.inputFlex}
-          placeholder={seleccionado ? seleccionado.nombre : placeholder}
+          placeholder={placeholder}
           value={query}
           onChangeText={(t) => {
             setQuery(t);
             setAbierto(true);
             if (!t) onChange(null);
           }}
-          onFocus={() => setAbierto(true)}
+          onFocus={() => {
+            cancelarCierre();
+            setAbierto(true);
+          }}
+          onBlur={alSalir}
         />
-        {(query || value !== null) && (
+        {(query !== '' || value !== null) && (
           <TouchableOpacity onPress={limpiar} style={s.clearBtn} hitSlop={8} accessibilityLabel="Limpiar búsqueda">
             <MaterialIcons name="close" size={18} color="#888" />
           </TouchableOpacity>
@@ -63,13 +97,14 @@ export function ProductAutocomplete({ productos, value, onChange, incluirTodos =
         <View style={s.drop}>
           <FlatList
             keyboardShouldPersistTaps="handled"
-            data={incluirTodos ? [{ id: null as number | null, nombre: 'Todos los productos' }, ...resultados] : resultados}
-            keyExtractor={(i, idx) => (i.id === null ? 'todos' : String(i.id) + idx)}
+            data={resultados}
+            keyExtractor={(i) => (i.id === null ? 'todos' : String(i.id))}
             ListEmptyComponent={<Text style={s.empty}>Sin coincidencias</Text>}
             renderItem={({ item }) => (
-              <TouchableOpacity style={s.opt} onPress={() => elegir(item.id, item.id === null ? '' : item.nombre)}>
-                <Text style={item.id === value || (item.id === null && value === null) ? s.sel : undefined}>
+              <TouchableOpacity style={s.opt} onPress={() => elegir(item)}>
+                <Text style={item.id === value ? s.sel : undefined}>
                   {item.nombre}
+                  {item.inactivo ? ' (inactivo)' : ''}
                 </Text>
               </TouchableOpacity>
             )}

@@ -187,6 +187,22 @@ def listar_productos(
         return [dict(r) for r in conn.execute(sql, (*params, limit, offset))]
 
 
+@app.get("/productos/activos")
+def listar_productos_activos() -> list[dict]:
+    """Todos los productos activos ordenados por nombre (para selectores)."""
+    with get_db() as conn:
+        return [
+            dict(r)
+            for r in conn.execute("SELECT * FROM productos WHERE estatus = 'activo' ORDER BY nombre COLLATE NOCASE")
+        ]
+
+
+@app.get("/productos/{pid}")
+def obtener_producto(pid: int) -> dict:
+    with get_db() as conn:
+        return dict(_producto_o_404(conn, pid))
+
+
 @app.post("/productos", status_code=201)
 def crear_producto(p: ProductoIn) -> dict:
     now = now_iso()

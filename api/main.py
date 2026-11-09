@@ -1,14 +1,19 @@
-"""API Compras App — FastAPI + SQLite (mismo modelo que la app móvil)."""
+"""API Compras App — FastAPI + SQLite (mismo modelo que la app móvil).
+
+La versión web de la app consume esta API (ver db/apiRepo.ts).
+Reglas de validación espejo de db/validacion.ts.
+"""
 from collections.abc import Iterator
 from contextlib import asynccontextmanager, contextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import os
 from pathlib import Path
 import sqlite3
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 DB_PATH = Path(os.environ.get("COMPRAS_DB_PATH", Path(__file__).with_name("compras.db")))
 # Orígenes permitidos separados por coma. Por defecto "*" (desarrollo).
@@ -77,17 +82,32 @@ def init_db() -> None:
         conn.execute(f"PRAGMA user_version = {DATABASE_VERSION}")
 
 
+# ---- Modelos ----
+
 class ProductoIn(BaseModel):
-    nombre: str = Field(min_length=1)
-    recordar: int = 1
-    intervalo_dias: int = 30
+    nombre: str = Field(min_length=1, max_length=120)
+    recordar: Literal[0, 1] = 1
+    intervalo_dias: int = Field(30, ge=1, le=3650)
+
+    @field_validator("nombre")
+    @classmethod
+    def nombre_sin_espacios(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Falta el nombre del producto.")
+        return v
 
 
 class CompraIn(BaseModel):
-    idProducto: int
-    recordar: int = 1
-    fecha_compra: str | None = None
+    idProducto: int = Field(ge=1)
+    recordar: Literal[0, 1] = 1
+    fecha_compra: date | None = None  # YYYY-MM-DD; por defecto hoy
     costo: float = Field(ge=0)
+
+    @field_validator("costo")
+    @classmethod
+    def dos_decimales(cls, v: float) -> float:
+        return round(v, 2)
 
 
 @asynccontextmanager
@@ -110,6 +130,40 @@ def health() -> dict:
     return {"ok": True}
 
 
+# ---- Helpers ----
+
+def _producto_o_404(conn: sqlite3.Connection, pid: int) -> sqlite3.Row:
+    row = conn.execute("SELECT * FROM productos WHERE id = ?", (pid,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "Producto no encontrado")
+    return row
+
+
+def _validar_nombre_unico(conn: sqlite3.Connection, nombre: str, excepto_id: int | None = None) -> None:
+    row = conn.execute(
+        "SELECT estatus FROM productos WHERE lower(trim(nombre)) = lower(?) AND id != ? LIMIT 1",
+        (nombre, excepto_id or -1),
+    ).fetchone()
+    if row is not None:
+        msg = (
+            "Ya existe un producto inactivo con ese nombre. Reactívalo en lugar de crear otro."
+            if row["estatus"] == "inactivo"
+            else "Ya existe un producto con ese nombre."
+        )
+        raise HTTPException(409, msg)
+
+
+def _set_estatus(conn: sqlite3.Connection, tabla: str, rid: int, estatus: str, con_fecha: bool) -> None:
+    if con_fecha:
+        cur = conn.execute(
+            f"UPDATE {tabla} SET estatus = ?, fecha_actualizacion = ? WHERE id = ?", (estatus, now_iso(), rid)
+        )
+    else:
+        cur = conn.execute(f"UPDATE {tabla} SET estatus = ? WHERE id = ?", (estatus, rid))
+    if cur.rowcount == 0:
+        raise HTTPException(404, "Producto no encontrado" if tabla == "productos" else "Compra no encontrada")
+
+
 # ---- Productos ----
 
 @app.get("/productos")
@@ -128,7 +182,7 @@ def listar_productos(
         params.append(f"%{nombre.strip()}%")
     if where:
         sql += " WHERE " + " AND ".join(where)
-    sql += " ORDER BY fecha_creacion DESC LIMIT ? OFFSET ?"
+    sql += " ORDER BY fecha_creacion DESC, id DESC LIMIT ? OFFSET ?"
     with get_db() as conn:
         return [dict(r) for r in conn.execute(sql, (*params, limit, offset))]
 
@@ -137,10 +191,11 @@ def listar_productos(
 def crear_producto(p: ProductoIn) -> dict:
     now = now_iso()
     with get_db() as conn:
+        _validar_nombre_unico(conn, p.nombre)
         cur = conn.execute(
             "INSERT INTO productos (nombre, recordar, intervalo_dias, fecha_creacion, fecha_actualizacion, estatus)"
             " VALUES (?, ?, ?, ?, ?, 'activo')",
-            (p.nombre.strip(), p.recordar, p.intervalo_dias, now, now),
+            (p.nombre, p.recordar, p.intervalo_dias, now, now),
         )
         return {"id": cur.lastrowid}
 
@@ -148,26 +203,27 @@ def crear_producto(p: ProductoIn) -> dict:
 @app.put("/productos/{pid}")
 def actualizar_producto(pid: int, p: ProductoIn) -> dict:
     with get_db() as conn:
-        cur = conn.execute(
+        _producto_o_404(conn, pid)
+        _validar_nombre_unico(conn, p.nombre, pid)
+        conn.execute(
             "UPDATE productos SET nombre = ?, recordar = ?, intervalo_dias = ?, fecha_actualizacion = ? WHERE id = ?",
-            (p.nombre.strip(), p.recordar, p.intervalo_dias, now_iso(), pid),
+            (p.nombre, p.recordar, p.intervalo_dias, now_iso(), pid),
         )
-        if cur.rowcount == 0:
-            raise HTTPException(404, "Producto no encontrado")
         return {"ok": True}
 
 
 @app.delete("/productos/{pid}")
 def eliminar_producto(pid: int) -> dict:
+    """Soft-delete: marca el producto como inactivo."""
     with get_db() as conn:
-        conn.execute("UPDATE productos SET estatus = 'inactivo', fecha_actualizacion = ? WHERE id = ?", (now_iso(), pid))
+        _set_estatus(conn, "productos", pid, "inactivo", con_fecha=True)
         return {"ok": True}
 
 
 @app.post("/productos/{pid}/reactivar")
 def reactivar_producto(pid: int) -> dict:
     with get_db() as conn:
-        conn.execute("UPDATE productos SET estatus = 'activo', fecha_actualizacion = ? WHERE id = ?", (now_iso(), pid))
+        _set_estatus(conn, "productos", pid, "activo", con_fecha=True)
         return {"ok": True}
 
 
@@ -176,8 +232,8 @@ def reactivar_producto(pid: int) -> dict:
 @app.get("/compras")
 def listar_compras(
     idProducto: int | None = None,
-    desde: str | None = None,
-    hasta: str | None = None,
+    desde: date | None = None,
+    hasta: date | None = None,
     incluir_inactivos: bool = False,
     limit: int = Query(30, ge=1, le=200),
     offset: int = Query(0, ge=0),
@@ -195,13 +251,13 @@ def listar_compras(
         params.append(idProducto)
     if desde:
         where.append("c.fecha_compra >= ?")
-        params.append(desde)
+        params.append(desde.isoformat())
     if hasta:
         where.append("c.fecha_compra <= ?")
-        params.append(hasta)
+        params.append(hasta.isoformat())
     if where:
         sql += " WHERE " + " AND ".join(where)
-    sql += " ORDER BY c.fecha_compra DESC LIMIT ? OFFSET ?"
+    sql += " ORDER BY c.fecha_compra DESC, c.id DESC LIMIT ? OFFSET ?"
     with get_db() as conn:
         return [dict(r) for r in conn.execute(sql, (*params, limit, offset))]
 
@@ -209,10 +265,15 @@ def listar_compras(
 @app.post("/compras", status_code=201)
 def crear_compra(c: CompraIn) -> dict:
     with get_db() as conn:
+        prod = conn.execute("SELECT estatus FROM productos WHERE id = ?", (c.idProducto,)).fetchone()
+        if prod is None:
+            raise HTTPException(400, "El producto no existe.")
+        if prod["estatus"] != "activo":
+            raise HTTPException(400, "No se pueden registrar compras de un producto inactivo.")
         cur = conn.execute(
             "INSERT INTO compras (idProducto, recordar, fecha_compra, costo, fecha_creacion, estatus)"
             " VALUES (?, ?, ?, ?, ?, 'activo')",
-            (c.idProducto, c.recordar, c.fecha_compra or now_iso(), c.costo, now_iso()),
+            (c.idProducto, c.recordar, (c.fecha_compra or date.today()).isoformat(), c.costo, now_iso()),
         )
         return {"id": cur.lastrowid}
 
@@ -220,24 +281,30 @@ def crear_compra(c: CompraIn) -> dict:
 @app.put("/compras/{cid}")
 def actualizar_compra(cid: int, c: CompraIn) -> dict:
     with get_db() as conn:
-        cur = conn.execute(
-            "UPDATE compras SET idProducto = ?, recordar = ?, fecha_compra = ?, costo = ? WHERE id = ?",
-            (c.idProducto, c.recordar, c.fecha_compra or now_iso(), c.costo, cid),
-        )
-        if cur.rowcount == 0:
+        actual = conn.execute("SELECT fecha_compra FROM compras WHERE id = ?", (cid,)).fetchone()
+        if actual is None:
             raise HTTPException(404, "Compra no encontrada")
+        if conn.execute("SELECT 1 FROM productos WHERE id = ?", (c.idProducto,)).fetchone() is None:
+            raise HTTPException(400, "El producto no existe.")
+        # Si no mandan fecha se conserva la que tenía (antes se sobrescribía con "ahora").
+        fecha = c.fecha_compra.isoformat() if c.fecha_compra else actual["fecha_compra"]
+        conn.execute(
+            "UPDATE compras SET idProducto = ?, recordar = ?, fecha_compra = ?, costo = ? WHERE id = ?",
+            (c.idProducto, c.recordar, fecha, c.costo, cid),
+        )
         return {"ok": True}
 
 
 @app.delete("/compras/{cid}")
 def eliminar_compra(cid: int) -> dict:
+    """Soft-delete: marca la compra como inactiva."""
     with get_db() as conn:
-        conn.execute("UPDATE compras SET estatus = 'inactivo' WHERE id = ?", (cid,))
+        _set_estatus(conn, "compras", cid, "inactivo", con_fecha=False)
         return {"ok": True}
 
 
 @app.post("/compras/{cid}/reactivar")
 def reactivar_compra(cid: int) -> dict:
     with get_db() as conn:
-        conn.execute("UPDATE compras SET estatus = 'activo' WHERE id = ?", (cid,))
+        _set_estatus(conn, "compras", cid, "activo", con_fecha=False)
         return {"ok": True}
